@@ -40,12 +40,15 @@ SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("🛩️ Airplane Shooter - 打飞机")
 CLOCK  = pygame.time.Clock()
 
-# ─── 字体 ─────────────────────────────────────────────────────────────────────
-FONT_TITLE = pygame.font.SysFont("arial", 48, bold=True)
-FONT_LARGE = pygame.font.SysFont("arial", 32, bold=True)
-FONT_MID   = pygame.font.SysFont("arial", 24)
-FONT_SMALL = pygame.font.SysFont("arial", 18)
-FONT_SCORE = pygame.font.SysFont("consolas", 22)
+# ─── 字体（使用 pygame 内置默认字体，避免系统字体兼容问题）────────────────────
+def _font(size, bold=False):
+    return pygame.font.Font(None, size)
+
+FONT_TITLE = _font(56, True)
+FONT_LARGE = _font(36, True)
+FONT_MID   = _font(28)
+FONT_SMALL = _font(22)
+FONT_SCORE = _font(26)
 
 # ─── 音效（内置生成，无需文件）─────────────────────────────────────────────────
 class SoundManager:
@@ -685,9 +688,9 @@ class Game:
 
         # 子弹
         for b in self.player_bullets:
-            b.draw(surface)
+            surface.blit(b.image, b.rect)
         for b in self.enemy_bullets:
-            b.draw(surface)
+            surface.blit(b.image, b.rect)
 
         # 敌机
         for e in self.enemies:
@@ -705,7 +708,7 @@ class Game:
         draw_text(surface, f"SCORE: {self.score}", 12, 8, FONT_SCORE, WHITE)
         draw_text(surface, f"HI: {self.high_score}", 12, 30, FONT_SMALL, YELLOW)
         draw_text(surface, f"LV.{self.level}", SCREEN_WIDTH - 90, 8, FONT_SCORE, ORANGE)
-        draw_hp_bar(SCREEN_WIDTH // 2 - 100, 8, self.player.hp, self.player.max_hp)
+        draw_hp_bar(SCREEN, SCREEN_WIDTH // 2 - 100, 8, self.player.hp, self.player.max_hp)
 
         if self.fps_display:
             draw_text(surface, f"FPS: {int(self.fps_smooth)}", SCREEN_WIDTH // 2 - 30, 32, FONT_SMALL, GRAY)
