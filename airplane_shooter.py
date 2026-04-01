@@ -1,56 +1,71 @@
+# -*- coding: utf-8 -*-
 """
-🛩️ Airplane Shooter - 打飞机游戏
-Pygame 竖版飞行射击游戏
+Airplane Shooter - Scrolling Vertical Shooter Game
+Pygame-based flight shooting game
 
-操作说明:
-  ← → ↑ ↓ / WASD  : 控制飞机移动
-  空格键            : 发射子弹
-  P 键              : 暂停/继续
-  ESC               : 退出游戏
+Controls:
+  Arrow Keys / WASD  : Move aircraft
+  SPACE / CTRL        : Fire bullets
+  P                   : Pause / Resume
+  ESC                 : Quit / Back to menu
 """
 
 import pygame
 import random
 import sys
 import math
+import os
 
-# ─── 初始化 ───────────────────────────────────────────────────────────────────
+# ─── Init ──────────────────────────────────────────────────────────────────────
 pygame.init()
 pygame.mixer.init()
 
-# ─── 游戏常量 ──────────────────────────────────────────────────────────────────
+# ─── Constants ─────────────────────────────────────────────────────────────────
 SCREEN_WIDTH  = 480
 SCREEN_HEIGHT = 700
 FPS = 60
 
-# 颜色
-BLACK      = (0, 0, 0)
-WHITE      = (255, 255, 255)
-RED        = (255, 60, 60)
-YELLOW     = (255, 230, 50)
-GREEN      = (80, 220, 100)
-BLUE       = (80, 160, 255)
-GRAY       = (100, 100, 100)
-DARK_GRAY  = (40, 40, 40)
-ORANGE     = (255, 140, 0)
-CYAN       = (0, 220, 220)
+# Colors
+BLACK     = (0, 0, 0)
+WHITE     = (255, 255, 255)
+RED       = (255, 60, 60)
+YELLOW    = (255, 230, 50)
+GREEN     = (80, 220, 100)
+BLUE      = (80, 160, 255)
+GRAY      = (100, 100, 100)
+DARK_GRAY = (40, 40, 40)
+ORANGE    = (255, 140, 0)
+CYAN      = (0, 220, 220)
 
-# 屏幕
+# Screen
 SCREEN = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("🛩️ Airplane Shooter - 打飞机")
+pygame.display.set_caption("Airplane Shooter")
 CLOCK  = pygame.time.Clock()
 
-# ─── 字体（使用 pygame 内置默认字体，避免系统字体兼容问题）────────────────────
-def _font(size, bold=False):
+# ─── Fonts (Microsoft YaHei for Chinese support) ───────────────────────────────
+FONT_PATHS = [
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyhl.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+]
+_chinese_font_path = None
+for fp in FONT_PATHS:
+    if os.path.exists(fp):
+        _chinese_font_path = fp
+        break
+
+def _font(size):
+    if _chinese_font_path:
+        return pygame.font.Font(_chinese_font_path, size)
     return pygame.font.Font(None, size)
 
-FONT_TITLE = _font(56, True)
-FONT_LARGE = _font(36, True)
+FONT_TITLE = _font(56)
+FONT_LARGE = _font(36)
 FONT_MID   = _font(28)
 FONT_SMALL = _font(22)
 FONT_SCORE = _font(26)
 
-# ─── 音效（内置生成，无需文件）─────────────────────────────────────────────────
+# ─── Sound Manager (procedural, no files needed) ───────────────────────────────
 class SoundManager:
     def __init__(self):
         try:
@@ -59,68 +74,40 @@ class SoundManager:
         except Exception:
             self.enabled = False
 
-    def _make_sound(self, freq, duration_ms, volume=0.3, wave_type="square"):
-        """用 numpy 生成简单音效（备用方案：直接静默）"""
+    def _beep(self, freq_hz, duration_ms, volume=0.2):
         try:
             import numpy as np
-            sample_rate = 22050
-            t = np.linspace(0, duration_ms / 1000, int(sample_rate * duration_ms / 1000), False)
-            if wave_type == "square":
-                wave = np.sign(np.sin(2 * math.pi * freq * t))
-            elif wave_type == "saw":
-                wave = 2 * (t * freq % 1) - 1
-            else:
-                wave = np.sin(2 * math.pi * freq * t)
-            # 包络
-            envelope = np.minimum(t / 0.01, np.ones_like(t))
-            envelope *= np.maximum(1 - (t / (duration_ms / 1000 - 0.05)), 0)
-            wave = (wave * envelope * volume * 32767).astype(np.int16)
-            stereo = np.column_stack((wave, wave))
-            sound = pygame.sndarray.make_sound(stereo)
-            return sound
+            sr = 22050
+            t  = np.linspace(0, duration_ms / 1000, int(sr * duration_ms / 1000), False)
+            wave = np.sin(2 * math.pi * freq_hz * t)
+            env = np.minimum(t / 0.01, np.ones_like(t))
+            env *= np.maximum(1 - t / (duration_ms / 1000 - 0.01), 0)
+            data = (wave * env * volume * 32767).astype(np.int16)
+            stereo = np.column_stack((data, data))
+            return pygame.sndarray.make_sound(stereo)
         except Exception:
-            class DummySound:
+            class Dummy:
                 def play(self): pass
-            return DummySound()
+            return Dummy()
 
     def shoot(self):
-        if self.enabled:
-            try:
-                self._make_sound(880, 60, 0.15, "square").play()
-            except Exception:
-                pass
-
+        if self.enabled: self._beep(880, 60, 0.12).play()
     def explosion(self):
-        if self.enabled:
-            try:
-                self._make_sound(120, 200, 0.25, "saw").play()
-            except Exception:
-                pass
-
+        if self.enabled: self._beep(120, 250, 0.22).play()
     def hit(self):
-        if self.enabled:
-            try:
-                self._make_sound(200, 100, 0.2, "square").play()
-            except Exception:
-                pass
-
+        if self.enabled: self._beep(200, 100, 0.18).play()
     def level_up(self):
         if self.enabled:
-            try:
-                s = self._make_sound(440, 80, 0.2, "square")
-                s.play()
-                pygame.time.delay(100)
-                self._make_sound(660, 100, 0.2, "square").play()
-            except Exception:
-                pass
+            self._beep(440, 80, 0.18).play()
+            pygame.time.delay(90)
+            self._beep(660, 100, 0.18).play()
 
 SOUND = SoundManager()
 
-# ─── 粒子特效 ─────────────────────────────────────────────────────────────────
+# ─── Particle Effects ──────────────────────────────────────────────────────────
 class Particle:
     def __init__(self, x, y, color, speed, angle, size, life):
-        self.x = x
-        self.y = y
+        self.x, self.y = x, y
         self.color = color
         self.vx = speed * math.cos(angle)
         self.vy = speed * math.sin(angle)
@@ -132,25 +119,26 @@ class Particle:
     def update(self):
         self.x += self.vx
         self.y += self.vy
+        self.vy += 0.05
         self.life -= 1
-        self.vy += 0.05  # 轻微重力
         if self.life <= 0:
             self.alive = False
 
     def draw(self, surface):
         alpha = max(0, int(255 * self.life / self.max_life))
-        size = max(1, int(self.size * self.life / self.max_life))
-        color = tuple(min(255, c + (255 - c) * (1 - self.life / self.max_life) * 0.5) for c in self.color)
-        pygame.draw.circle(surface, color, (int(self.x), int(self.y)), size)
+        r = max(1, int(self.size * self.life / self.max_life))
+        surf = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(surf, (*self.color, alpha), (r, r), r)
+        surface.blit(surf, (int(self.x) - r, int(self.y) - r))
 
 class Explosion:
     def __init__(self, x, y, color=ORANGE, count=20, speed=5):
         self.particles = [
             Particle(x, y, color,
-                     random.uniform(speed * 0.5, speed * 1.5),
+                     random.uniform(speed * 0.4, speed * 1.5),
                      random.uniform(0, 2 * math.pi),
-                     random.randint(2, 5),
-                     random.randint(20, 40))
+                     random.uniform(2, 5),
+                     random.randint(20, 45))
             for _ in range(count)
         ]
 
@@ -167,53 +155,50 @@ class Explosion:
     def alive(self):
         return bool(self.particles)
 
-# ─── 拖尾效果 ─────────────────────────────────────────────────────────────────
+# ─── Trail Effect ─────────────────────────────────────────────────────────────
 class Trail:
     def __init__(self):
         self.points = []
-        self.max_points = 12
+        self.max_points = 14
 
     def add(self, x, y):
         self.points.append((x, y))
         if len(self.points) > self.max_points:
             self.points.pop(0)
 
-    def draw(self, surface, color):
+    def draw(self, surface, color=(80, 160, 255)):
         for i, (px, py) in enumerate(self.points):
-            alpha = int(180 * i / max(1, len(self.points)))
-            size  = max(1, int(8 * i / max(1, len(self.points))))
-            s = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
-            pygame.draw.circle(s, (*color, alpha), (size, size), size)
-            surface.blit(s, (int(px) - size, int(py) - size))
+            alpha = int(200 * i / max(1, len(self.points)))
+            size  = max(1, int(7 * i / max(1, len(self.points))))
+            surf = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (*color, alpha), (size, size), size)
+            surface.blit(surf, (int(px) - size, int(py) - size))
 
-# ─── 我方飞机 ─────────────────────────────────────────────────────────────────
-class Player(pygame.sprite.Group):
+# ─── Player Aircraft ──────────────────────────────────────────────────────────
+class Player:
     def __init__(self):
-        super().__init__()
-        # 创建飞机图像（三角形战斗机）
-        self.image = self._make_plane_image()
+        self.image = self._make_surface()
         self.rect  = self.image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 80))
         self.x = float(self.rect.x)
         self.y = float(self.rect.y)
         self.speed = 6
         self.hp = 3
         self.max_hp = 3
-        self.invincible = 0          # 无敌时间
+        self.invincible = 0
         self.trail = Trail()
-        self.engine_flame = 0
+        self.flame_timer = 0
 
-    def _make_plane_image(self):
-        surf = pygame.Surface((60, 70), pygame.SRCALPHA)
-        # 机身
-        pts = [(30, 0), (45, 25), (40, 65), (30, 60), (20, 65), (15, 25)]
+    def _make_surface(self):
+        surf = pygame.Surface((64, 72), pygame.SRCALPHA)
+        # Fuselage
+        pts = [(32, 2), (46, 28), (40, 68), (32, 63), (24, 68), (18, 28)]
         pygame.draw.polygon(surf, WHITE, pts)
-        # 机翼
-        pygame.draw.polygon(surf, (180, 200, 220), [(10, 40), (0, 55), (15, 55)])
-        pygame.draw.polygon(surf, (180, 200, 220), [(50, 40), (60, 55), (45, 55)])
-        # 驾驶舱
-        pygame.draw.ellipse(surf, CYAN, (22, 15, 16, 20))
-        # 描边
         pygame.draw.polygon(surf, (100, 120, 150), pts, 1)
+        # Wings
+        pygame.draw.polygon(surf, (170, 195, 220), [(10, 44), (0, 60), (16, 60)])
+        pygame.draw.polygon(surf, (170, 195, 220), [(54, 44), (64, 60), (48, 60)])
+        # Cockpit
+        pygame.draw.ellipse(surf, CYAN, (22, 14, 18, 22))
         return surf
 
     def update(self, keys):
@@ -222,47 +207,46 @@ class Player(pygame.sprite.Group):
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]: dx += self.speed
         if keys[pygame.K_UP]    or keys[pygame.K_w]: dy -= self.speed
         if keys[pygame.K_DOWN]  or keys[pygame.K_s]: dy += self.speed
-        # 对角线归一化
         if dx and dy:
             dx *= 0.707; dy *= 0.707
         self.x = max(0, min(SCREEN_WIDTH - self.rect.width, self.x + dx))
         self.y = max(0, min(SCREEN_HEIGHT - self.rect.height, self.y + dy))
         self.rect.x = int(self.x)
         self.rect.y = int(self.y)
-        self.trail.add(self.rect.centerx, self.rect.bottom - 10)
+        self.trail.add(self.rect.centerx, self.rect.bottom - 8)
         if self.invincible > 0:
             self.invincible -= 1
-        self.engine_flame = (self.engine_flame + 1) % 8
+        self.flame_timer = (self.flame_timer + 1) % 6
 
     def draw(self, surface):
-        self.trail.draw(surface, (80, 160, 255))
-        # 引擎火焰
-        if self.engine_flame < 4:
-            fx = self.rect.centerx
-            fy = self.rect.bottom
+        self.trail.draw(surface)
+        # Engine flame
+        if self.flame_timer < 3:
+            fx = self.rect.centerx + random.randint(-3, 3)
+            fy = self.rect.bottom + 2
             fh = random.randint(8, 16)
-            colors = [YELLOW, ORANGE, RED]
-            for i, c in enumerate(colors):
-                pygame.draw.circle(surface, c, (fx + random.randint(-3, 3), fy + 2), fh - i * 2)
-        # 闪烁（无敌状态）
+            for c in [YELLOW, ORANGE, RED]:
+                pygame.draw.circle(surface, c, (fx, fy), max(2, fh - random.randint(0, 4)))
+        # Blink when invincible
         if self.invincible > 0 and (self.invincible // 4) % 2 == 0:
-            s = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
-            s.set_alpha(80)
-            s.blit(self.image, (0, 0))
-            surface.blit(s, self.rect)
+            tmp = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
+            tmp.set_alpha(80)
+            tmp.blit(self.image, (0, 0))
+            surface.blit(tmp, self.rect)
         else:
             surface.blit(self.image, self.rect)
 
     def get_center(self):
         return self.rect.centerx, self.rect.centery
 
-# ─── 子弹 ─────────────────────────────────────────────────────────────────────
+# ─── Bullet ────────────────────────────────────────────────────────────────────
 class Bullet(pygame.sprite.Sprite):
-    def __init__(self, x, y, speed=-12, color=YELLOW, size=4):
+    def __init__(self, x, y, speed=-12, color=YELLOW):
         super().__init__()
-        self.image = pygame.Surface((size, size * 3), pygame.SRCALPHA)
-        pygame.draw.rect(self.image, color, self.image.get_rect())
-        pygame.draw.rect(self.image, WHITE, (size // 2 - 1, 0, 2, size * 3))
+        r = 4
+        self.image = pygame.Surface((r * 2, r * 4), pygame.SRCALPHA)
+        pygame.draw.rect(self.image, color, (0, 0, r * 2, r * 4))
+        pygame.draw.rect(self.image, WHITE, (r - 1, 0, 2, r * 4))
         self.rect = self.image.get_rect(center=(x, y))
         self.speed = speed
         self.damage = 1
@@ -272,25 +256,22 @@ class Bullet(pygame.sprite.Sprite):
         if self.rect.bottom < 0:
             self.kill()
 
-    def draw(self, surface):
-        surface.blit(self.image, self.rect)
-
-# ─── 敌机 ─────────────────────────────────────────────────────────────────────
+# ─── Enemy ─────────────────────────────────────────────────────────────────────
 class Enemy(pygame.sprite.Sprite):
     TYPES = {
-        "basic":  {"hp": 1, "speed": (2, 4), "score": 10,  "color": RED,    "w": 40, "h": 50},
-        "fast":   {"hp": 1, "speed": (4, 6), "score": 15,  "color": ORANGE, "w": 30, "h": 40},
-        "tank":   {"hp": 3, "speed": (1, 2), "score": 30,  "color": (180, 60, 200), "w": 55, "h": 65},
-        "shooter":{"hp": 2, "speed": (1, 2), "score": 25,  "color": (200, 100, 200), "w": 45, "h": 55},
+        "basic":   {"hp": 1, "speed": (2, 4),   "score": 10,  "color": RED,                       "w": 40, "h": 50},
+        "fast":    {"hp": 1, "speed": (4, 6.5), "score": 15,  "color": ORANGE,                     "w": 30, "h": 40},
+        "tank":    {"hp": 3, "speed": (1, 2),   "score": 30,  "color": (180, 60, 200),             "w": 55, "h": 65},
+        "shooter": {"hp": 2, "speed": (1, 2.5), "score": 25,  "color": (200, 100, 200),             "w": 45, "h": 55},
     }
 
     def __init__(self, enemy_type="basic"):
         super().__init__()
         cfg = self.TYPES.get(enemy_type, self.TYPES["basic"])
         self.enemy_type = enemy_type
-        self.max_hp = cfg["hp"]
-        self.hp = self.max_hp
-        self.score = cfg["score"]
+        self.max_hp   = cfg["hp"]
+        self.hp       = self.max_hp
+        self.score    = cfg["score"]
         self.w, self.h = cfg["w"], cfg["h"]
         color = cfg["color"]
         self.speed_min, self.speed_max = cfg["speed"]
@@ -301,49 +282,50 @@ class Enemy(pygame.sprite.Sprite):
         self.x = float(self.rect.x)
         self.y = float(self.rect.y)
         self.wobble = random.uniform(-0.5, 0.5)
-        self.wobble_speed = random.uniform(0.02, 0.06)
-        self.shoot_timer = random.randint(60, 180) if enemy_type == "shooter" else 0
+        self.wobble_phase = random.uniform(0, math.pi * 2)
+        self.shoot_timer = random.randint(80, 180) if enemy_type == "shooter" else 0
         self.hit_flash = 0
 
     def _make_image(self, color):
         surf = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
-        # 敌机样式（倒三角形）
-        cx, cy = self.w // 2, self.h // 2
+        cx = self.w // 2
+        # Body: inverted triangle
         pts = [(cx, self.h), (self.w - 4, 4), (cx, 0), (4, 4)]
         pygame.draw.polygon(surf, color, pts)
         pygame.draw.polygon(surf, WHITE, pts, 1)
-        # 驾驶舱
-        pygame.draw.ellipse(surf, (80, 0, 0), (cx - 7, cy - 8, 14, 16))
-        # 细节线
-        pygame.draw.line(surf, (200, 50, 50), (cx - 10, 8), (cx + 10, 8), 1)
+        # Cockpit
+        pygame.draw.ellipse(surf, (80, 0, 0), (cx - 7, self.h // 2 - 10, 14, 18))
+        # Details
+        pygame.draw.line(surf, (200, 50, 50), (cx - 10, 6), (cx + 10, 6), 1)
+        pygame.draw.line(surf, (200, 50, 50), (cx - 10, self.h - 6), (cx + 10, self.h - 6), 1)
         return surf
 
     def update(self, *args):
         self.y += self.speed
-        self.x += self.wobble * math.sin(pygame.time.get_ticks() * self.wobble_speed / 16)
+        self.wobble_phase += 0.04
+        self.x += self.wobble * math.sin(self.wobble_phase)
         self.rect.y = int(self.y)
-        self.rect.x = int(self.x)
+        self.rect.x = int(max(0, min(SCREEN_WIDTH - self.w, self.x)))
         if self.hit_flash > 0:
             self.hit_flash -= 1
         if self.rect.top > SCREEN_HEIGHT:
             self.kill()
 
     def draw(self, surface):
+        img = self.image
         if self.hit_flash > 0 and self.hit_flash % 4 < 2:
-            s = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
-            s.fill((255, 255, 255, 150))
-            s.blit(self.image, (0, 0))
-            surface.blit(s, self.rect)
-        else:
-            surface.blit(self.image, self.rect)
-        # 血条
+            tmp = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+            tmp.fill((255, 255, 255, 140))
+            tmp.blit(self.image, (0, 0))
+            img = tmp
+        surface.blit(img, self.rect)
+        # HP bar for multi-HP enemies
         if self.max_hp > 1:
-            bar_w = self.w
-            bar_h = 4
+            bw, bh = self.w, 4
             bx, by = self.rect.x, self.rect.y - 8
-            pygame.draw.rect(surface, DARK_GRAY, (bx, by, bar_w, bar_h))
-            pygame.draw.rect(surface, GREEN if self.hp == self.max_hp else YELLOW,
-                             (bx, by, bar_w * self.hp // self.max_hp, bar_h))
+            pygame.draw.rect(surface, DARK_GRAY, (bx, by, bw, bh))
+            bar_color = GREEN if self.hp == self.max_hp else YELLOW
+            pygame.draw.rect(surface, bar_color, (bx, by, bw * self.hp // self.max_hp, bh))
 
     def hit(self, dmg=1):
         self.hp -= dmg
@@ -357,13 +339,13 @@ class Enemy(pygame.sprite.Sprite):
         self.shoot_timer = random.randint(90, 180)
         return True
 
-# ─── 敌机子弹 ─────────────────────────────────────────────────────────────────
+# ─── Enemy Bullet ─────────────────────────────────────────────────────────────
 class EnemyBullet(pygame.sprite.Sprite):
     def __init__(self, x, y, dx=0, dy=4, color=RED):
         super().__init__()
         r = 5
         self.image = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(self.image, color, (r, r), r)
+        pygame.draw.circle(self.image, color,  (r, r), r)
         pygame.draw.circle(self.image, WHITE, (r, r), r - 2)
         self.rect = self.image.get_rect(center=(x, y))
         self.dx = dx
@@ -372,16 +354,16 @@ class EnemyBullet(pygame.sprite.Sprite):
     def update(self):
         self.rect.x += int(self.dx)
         self.rect.y += int(self.dy)
-        if (self.rect.left < -10 or self.rect.right > SCREEN_WIDTH + 10
-                or self.rect.top > SCREEN_HEIGHT + 10):
+        if self.rect.left < -10 or self.rect.right > SCREEN_WIDTH + 10 \
+           or self.rect.top > SCREEN_HEIGHT + 10:
             self.kill()
 
-# ─── 星星背景 ─────────────────────────────────────────────────────────────────
+# ─── Star Background ──────────────────────────────────────────────────────────
 class Star:
     def __init__(self):
         self.x = random.randint(0, SCREEN_WIDTH)
         self.y = random.randint(0, SCREEN_HEIGHT)
-        self.size = random.choice([1, 1, 1, 2])
+        self.size = random.choice([1, 1, 2])
         self.speed = random.uniform(0.5, 2.0)
         self.twinkle = random.randint(0, 100)
 
@@ -393,19 +375,20 @@ class Star:
             self.x = random.randint(0, SCREEN_WIDTH)
 
     def draw(self, surface):
-        alpha = 100 + int(80 * math.sin(self.twinkle * 0.05))
+        a = 100 + int(80 * math.sin(self.twinkle * 0.05))
         color = (180, 200, 255) if self.size > 1 else (100, 120, 180)
-        s = pygame.Surface((self.size * 2, self.size * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*color, alpha), (self.size, self.size), self.size)
+        r = self.size
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*color, a), (r, r), r)
         surface.blit(s, (int(self.x), int(self.y)))
 
-# ─── 血量道具 ─────────────────────────────────────────────────────────────────
+# ─── Health Pack ──────────────────────────────────────────────────────────────
 class HealthPack(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
         self.image = pygame.Surface((28, 28), pygame.SRCALPHA)
-        pygame.draw.rect(self.image, RED,    (10, 0, 8, 28))   # 竖
-        pygame.draw.rect(self.image, RED,    (0, 10, 28, 8))   # 横
+        pygame.draw.rect(self.image, RED,   (11, 0,  6, 28))
+        pygame.draw.rect(self.image, RED,   (0,  11, 28, 6))
         pygame.draw.circle(self.image, (255, 80, 80), (14, 14), 14, 2)
         self.rect = self.image.get_rect(center=(x, y))
         self.speed = 1.5
@@ -415,34 +398,28 @@ class HealthPack(pygame.sprite.Sprite):
         if self.rect.top > SCREEN_HEIGHT:
             self.kill()
 
-# ─── UI 绘制函数 ───────────────────────────────────────────────────────────────
-def draw_text(surface, text, x, y, font, color, shadow=True, shadow_color=None):
-    if shadow:
-        shadow_c = shadow_color or (0, 0, 0)
-        s = font.render(text, True, shadow_c)
-        surface.blit(s, (x + 1, y + 1))
+# ─── UI Helpers ────────────────────────────────────────────────────────────────
+def draw_text(surface, text, x, y, font, color):
     img = font.render(text, True, color)
     surface.blit(img, (x, y))
 
 def draw_hp_bar(surface, x, y, current, maximum, width=200, height=16):
     pygame.draw.rect(surface, DARK_GRAY, (x, y, width, height), border_radius=6)
     ratio = max(0, current / maximum)
-    color = GREEN if ratio > 0.5 else YELLOW if ratio > 0.25 else RED
-    pygame.draw.rect(surface, color, (x + 2, y + 2, int((width - 4) * ratio), height - 4), border_radius=5)
-    pygame.draw.rect(surface, WHITE, (x, y, width, height), width=1, border_radius=6)
+    bar_color = GREEN if ratio > 0.5 else YELLOW if ratio > 0.25 else RED
+    bx = x + 2
+    by = y + 2
+    bh = height - 4
+    bw = int((width - 4) * ratio)
+    if bw > 0:
+        pygame.draw.rect(surface, bar_color, (bx, by, bw, bh), border_radius=5)
+    pygame.draw.rect(surface, WHITE, (x, y, width, height), 1, border_radius=6)
     label = f"{current} / {maximum}"
     lbl = FONT_SMALL.render(label, True, WHITE)
-    surface.blit(lbl, (x + (width - lbl.get_width()) // 2, y + (height - lbl.get_height()) // 2))
+    surface.blit(lbl, (x + (width - lbl.get_width()) // 2,
+                        y + (height - lbl.get_height()) // 2))
 
-def draw_button(surface, rect, text, mouse_pos, font, bg_color, fg_color, hover_color):
-    hovered = rect.collidepoint(mouse_pos)
-    color = hover_color if hovered else bg_color
-    pygame.draw.rect(surface, color, rect, border_radius=10)
-    pygame.draw.rect(surface, WHITE, rect, 1, border_radius=10)
-    txt = font.render(text, True, WHITE)
-    surface.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
-
-# ─── 游戏主类 ─────────────────────────────────────────────────────────────────
+# ─── Game Class ───────────────────────────────────────────────────────────────
 class Game:
     STATES = {"menu", "playing", "paused", "gameover"}
 
@@ -451,82 +428,75 @@ class Game:
         self.reset()
 
     def reset(self):
-        self.player        = Player()
-        self.player_bullets= pygame.sprite.Group()
-        self.enemies       = pygame.sprite.Group()
-        self.enemy_bullets = pygame.sprite.Group()
-        self.all_sprites   = pygame.sprite.Group()
-        self.explosions    = []
-        self.health_packs  = pygame.sprite.Group()
-        self.stars         = [Star() for _ in range(80)]
-        self.score         = 0
-        self.high_score    = self.high_score if hasattr(self, "high_score") else 0
-        self.level         = 1
-        self.level_floor   = 100
-        self.shoot_cooldown= 0
-        self.enemy_spawn   = 0
-        self.spawn_interval= 60
-        self.fps_display   = False
-        self.menu_selection= 0
-        self.last_time     = pygame.time.get_ticks()
-        self.fps_smooth    = FPS
+        self.player          = Player()
+        self.player_bullets  = pygame.sprite.Group()
+        self.enemies         = pygame.sprite.Group()
+        self.enemy_bullets   = pygame.sprite.Group()
+        self.explosions      = []
+        self.health_packs    = pygame.sprite.Group()
+        self.stars           = [Star() for _ in range(80)]
+        self.score           = 0
+        self.high_score      = getattr(self, "high_score", 0)
+        self.level           = 1
+        self.level_floor     = 100
+        self.shoot_cooldown  = 0
+        self.enemy_spawn     = 0
+        self.spawn_interval  = 65
+        self.fps_display     = False
+        self.last_time       = pygame.time.get_ticks()
+        self.fps_smooth      = FPS
 
     def spawn_enemy(self):
-        t = random.choices(["basic", "fast", "tank", "shooter"],
-                            weights=[50, 25, 12, 13])[0]
-        enemy = Enemy(t)
-        self.enemies.add(enemy)
+        t = random.choices(
+            ["basic", "fast", "tank", "shooter"],
+            weights=[50, 25, 12, 13])[0]
+        self.enemies.add(Enemy(t))
 
     def check_collisions(self):
         player = self.player
-        center = player.get_center()
 
-        # 子弹 vs 敌机
+        # Player bullets vs enemies
         hits = pygame.sprite.groupcollide(
             self.player_bullets, self.enemies, True, False)
-        for bullet, enemy_list in hits.items():
-            for enemy in enemy_list:
+        for bullet, elist in hits.items():
+            for enemy in elist:
                 dead = enemy.hit(bullet.damage)
                 SOUND.hit()
-                self.explosions.append(Explosion(
-                    enemy.rect.centerx, enemy.rect.centery, ORANGE, 8, 3))
+                self.explosions.append(Explosion(enemy.rect.centerx, enemy.rect.centery, ORANGE, 8, 3))
                 if dead:
                     SOUND.explosion()
-                    self.explosions.append(Explosion(
-                        enemy.rect.centerx, enemy.rect.centery, YELLOW, 25, 6))
+                    self.explosions.append(Explosion(enemy.rect.centerx, enemy.rect.centery, YELLOW, 25, 6))
                     self.score += enemy.score
                     if random.random() < 0.08:
-                        hp = HealthPack(enemy.rect.centerx, enemy.rect.centery)
-                        self.health_packs.add(hp)
+                        self.health_packs.add(HealthPack(enemy.rect.centerx, enemy.rect.centery))
                     enemy.kill()
-                    # 升级
                     if self.score >= self.level_floor:
                         self.level += 1
                         self.level_floor += self.level * 100
-                        self.spawn_interval = max(20, 60 - self.level * 3)
+                        self.spawn_interval = max(20, 65 - self.level * 3)
                         SOUND.level_up()
 
-        # 敌机 vs 玩家
+        # Enemies vs player
         if player.invincible == 0:
-            for enemy in pygame.sprite.spritecollide(player, self.enemies, True):
+            for _ in pygame.sprite.spritecollide(player, self.enemies, True):
                 SOUND.explosion()
-                self.explosions.append(Explosion(enemy.rect.centerx, enemy.rect.centery, RED, 20, 5))
+                self.explosions.append(Explosion(player.rect.centerx, player.rect.centery, RED, 20, 5))
                 player.hp -= 1
                 player.invincible = 90
                 if player.hp <= 0:
                     self.game_over()
 
-        # 敌机子弹 vs 玩家
+        # Enemy bullets vs player
         if player.invincible == 0:
-            for bullet in pygame.sprite.spritecollide(player, self.enemy_bullets, True):
+            for b in pygame.sprite.spritecollide(player, self.enemy_bullets, True):
                 SOUND.hit()
-                self.explosions.append(Explosion(bullet.rect.centerx, bullet.rect.centery, RED, 8, 3))
+                self.explosions.append(Explosion(b.rect.centerx, b.rect.centery, RED, 8, 3))
                 player.hp -= 1
                 player.invincible = 90
                 if player.hp <= 0:
                     self.game_over()
 
-        # 血包 vs 玩家
+        # Health packs
         for hp in pygame.sprite.spritecollide(player, self.health_packs, True):
             player.hp = min(player.max_hp, player.hp + 1)
             self.explosions.append(Explosion(hp.rect.centerx, hp.rect.centery, GREEN, 12, 4))
@@ -537,51 +507,58 @@ class Game:
         if self.score > self.high_score:
             self.high_score = self.score
 
-    # ── 各状态处理 ──────────────────────────────────────────────────────────────
+    # ── Input handling ───────────────────────────────────────────────────────
+
+    def _handle_quit(self, events):
+        for e in events:
+            if e.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
 
     def handle_menu(self, events):
+        self._handle_quit(events)
         for e in events:
             if e.type == pygame.KEYDOWN:
                 if e.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    self.state = "playing"
                     self.reset()
                     self.state = "playing"
                 elif e.key == pygame.K_ESCAPE:
-                    pygame.quit(); sys.exit()
-            elif e.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                    pygame.quit()
+                    sys.exit()
 
     def handle_playing(self, events):
+        self._handle_quit(events)
         keys = pygame.key.get_pressed()
         self.player.update(keys)
 
-        # 射击
+        # Shoot
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
-        if (keys[pygame.K_SPACE] or keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]) and self.shoot_cooldown == 0:
+        shoot_keys = (pygame.K_SPACE, pygame.K_LCTRL, pygame.K_RCTRL)
+        if any(keys[k] for k in shoot_keys) and self.shoot_cooldown == 0:
             cx, cy = self.player.get_center()
             self.player_bullets.add(Bullet(cx, cy - 30))
             if self.level >= 3:
                 self.player_bullets.add(Bullet(cx - 15, cy - 20))
                 self.player_bullets.add(Bullet(cx + 15, cy - 20))
             if self.level >= 6:
-                self.player_bullets.add(Bullet(cx, cy - 30, -12, CYAN, 6))
-            self.shoot_cooldown = 10 - min(5, self.level // 2)
+                self.player_bullets.add(Bullet(cx, cy - 30, -14, CYAN))
+            cooldown = max(5, 12 - self.level)
+            self.shoot_cooldown = cooldown
             SOUND.shoot()
 
-        # 敌机生成
+        # Spawn enemies
         self.enemy_spawn += 1
         if self.enemy_spawn >= self.spawn_interval:
             self.enemy_spawn = 0
             self.spawn_enemy()
 
-        # 敌机射击
+        # Enemy shooting
         for enemy in self.enemies:
-            if hasattr(enemy, "can_shoot") and enemy.can_shoot():
-                self.enemy_bullets.add(
-                    EnemyBullet(enemy.rect.centerx, enemy.rect.bottom))
+            if enemy.can_shoot():
+                self.enemy_bullets.add(EnemyBullet(enemy.rect.centerx, enemy.rect.bottom))
 
-        # 更新
+        # Update
         self.player_bullets.update()
         self.enemies.update()
         self.enemy_bullets.update()
@@ -591,13 +568,13 @@ class Game:
         for ex in self.explosions:
             ex.update()
         self.explosions = [e for e in self.explosions if e.alive]
-        self.check_collisions()
 
-        # FPS 平滑
         now = pygame.time.get_ticks()
         dt = max(1, now - self.last_time)
         self.last_time = now
         self.fps_smooth = 0.9 * self.fps_smooth + 0.1 * (1000 / dt)
+
+        self.check_collisions()
 
         for e in events:
             if e.type == pygame.KEYDOWN:
@@ -607,10 +584,9 @@ class Game:
                     self.fps_display = not self.fps_display
                 elif e.key == pygame.K_ESCAPE:
                     self.state = "menu"
-            elif e.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
 
     def handle_paused(self, events):
+        self._handle_quit(events)
         for e in events:
             if e.type == pygame.KEYDOWN:
                 if e.key in (pygame.K_p, pygame.K_RETURN, pygame.K_SPACE):
@@ -618,10 +594,9 @@ class Game:
                     self.last_time = pygame.time.get_ticks()
                 elif e.key == pygame.K_ESCAPE:
                     self.state = "menu"
-            elif e.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
 
     def handle_gameover(self, events):
+        self._handle_quit(events)
         for e in events:
             if e.type == pygame.KEYDOWN:
                 if e.key in (pygame.K_RETURN, pygame.K_SPACE):
@@ -629,110 +604,114 @@ class Game:
                     self.state = "playing"
                 elif e.key == pygame.K_ESCAPE:
                     self.state = "menu"
-            elif e.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
 
-    # ── 各状态渲染 ─────────────────────────────────────────────────────────────
+    # ── Rendering ─────────────────────────────────────────────────────────────
 
     def render(self, surface):
         surface.fill(BLACK)
         for s in self.stars:
             s.draw(surface)
 
-        if self.state == "menu":
-            self._render_menu(surface)
-        elif self.state == "playing":
-            self._render_playing(surface)
-        elif self.state == "paused":
-            self._render_playing(surface)
+        {
+            "menu":     self._render_menu,
+            "playing":  self._render_playing,
+            "paused":   self._render_playing,
+            "gameover": self._render_gameover,
+        }[self.state](surface)
+
+        if self.state == "paused":
             self._render_paused_overlay(surface)
-        elif self.state == "gameover":
-            self._render_gameover(surface)
 
         pygame.display.flip()
 
     def _render_menu(self, surface):
-        # 标题
-        title = FONT_TITLE.render("AIRPLANE", True, WHITE)
-        sub   = FONT_LARGE.render("SHOOTER",  True, CYAN)
-        surface.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 160))
-        surface.blit(sub,   (SCREEN_WIDTH // 2 - sub.get_width() // 2,   220))
+        # Title
+        t1 = FONT_TITLE.render("AIRPLANE", True, WHITE)
+        t2 = FONT_LARGE.render("SHOOTER",  True, CYAN)
+        surface.blit(t1, (SCREEN_WIDTH // 2 - t1.get_width() // 2, 140))
+        surface.blit(t2, (SCREEN_WIDTH // 2 - t2.get_width() // 2, 205))
 
-        # 飞机装饰
-        plane_surf = self.player.image.copy()
-        plane_surf = pygame.transform.rotate(plane_surf, 0)
-        surface.blit(plane_surf, (SCREEN_WIDTH // 2 - 30, 300))
+        # Decorative plane
+        surface.blit(self.player.image, (SCREEN_WIDTH // 2 - 32, 280))
 
-        # 操作说明
-        info_lines = [
-            (">>> 按 SPACE / ENTER 开始游戏 <<<", CYAN),
-            ("", WHITE),
-            ("Controls  操作说明", YELLOW),
-            ("Arrow Keys / WASD  移动飞机", GRAY),
-            ("SPACE / CTRL        发射子弹", GRAY),
-            ("P                   暂停游戏", GRAY),
-            ("ESC                 返回菜单", GRAY),
+        # Start prompt (blinking)
+        if (pygame.time.get_ticks() // 600) % 2 == 0:
+            prompt = FONT_MID.render(">>> PRESS SPACE TO START <<<", True, CYAN)
+            surface.blit(prompt, (SCREEN_WIDTH // 2 - prompt.get_width() // 2, 380))
+
+        # Controls
+        ctrl = [
+            ("[ CONTROLS ]",         YELLOW),
+            ("Move  : Arrow / WASD", WHITE),
+            ("Fire  : SPACE / CTRL", WHITE),
+            ("Pause : P",             WHITE),
+            ("Menu  : ESC",           WHITE),
         ]
-        for i, (txt, col) in enumerate(info_lines):
-            draw_text(surface, txt, SCREEN_WIDTH // 2 - 160, 390 + i * 28, FONT_MID, col, shadow=False)
+        for i, (txt, col) in enumerate(ctrl):
+            img = FONT_SMALL.render(txt, True, col)
+            surface.blit(img, (SCREEN_WIDTH // 2 - 140, 430 + i * 28))
 
-        # 高分
+        # High score
         if self.high_score > 0:
             hs = FONT_SMALL.render(f"High Score: {self.high_score}", True, YELLOW)
             surface.blit(hs, (SCREEN_WIDTH // 2 - hs.get_width() // 2, 610))
 
     def _render_playing(self, surface):
-        # 粒子爆炸
         for ex in self.explosions:
             ex.draw(surface)
-
-        # 子弹
         for b in self.player_bullets:
             surface.blit(b.image, b.rect)
         for b in self.enemy_bullets:
             surface.blit(b.image, b.rect)
-
-        # 敌机
         for e in self.enemies:
             e.draw(surface)
-
-        # 血包
         for hp in self.health_packs:
             surface.blit(hp.image, hp.rect)
-
-        # 玩家
         self.player.draw(surface)
 
-        # HUD
-        pygame.draw.rect(surface, (0, 0, 0, 120), (0, 0, SCREEN_WIDTH, 52))
-        draw_text(surface, f"SCORE: {self.score}", 12, 8, FONT_SCORE, WHITE)
-        draw_text(surface, f"HI: {self.high_score}", 12, 30, FONT_SMALL, YELLOW)
-        draw_text(surface, f"LV.{self.level}", SCREEN_WIDTH - 90, 8, FONT_SCORE, ORANGE)
-        draw_hp_bar(SCREEN, SCREEN_WIDTH // 2 - 100, 8, self.player.hp, self.player.max_hp)
-
+        # HUD bar
+        pygame.draw.rect(surface, (0, 0, 0, 130), (0, 0, SCREEN_WIDTH, 54))
+        draw_text(surface, f"SCORE: {self.score}",         12,   8, FONT_SCORE, WHITE)
+        draw_text(surface, f"HI: {self.high_score}",      12,  32, FONT_SMALL, YELLOW)
+        draw_text(surface, f"LV.{self.level}", SCREEN_WIDTH - 80, 8, FONT_SCORE, ORANGE)
+        draw_hp_bar(surface, SCREEN_WIDTH // 2 - 100, 8,
+                    self.player.hp, self.player.max_hp)
         if self.fps_display:
-            draw_text(surface, f"FPS: {int(self.fps_smooth)}", SCREEN_WIDTH // 2 - 30, 32, FONT_SMALL, GRAY)
+            draw_text(surface, f"FPS: {int(self.fps_smooth)}",
+                      SCREEN_WIDTH // 2 - 28, 34, FONT_SMALL, GRAY)
 
     def _render_paused_overlay(self, surface):
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 160))
         surface.blit(overlay, (0, 0))
-        draw_text(surface, "PAUSED", SCREEN_WIDTH // 2 - 80, SCREEN_HEIGHT // 2 - 40, FONT_LARGE, WHITE)
-        draw_text(surface, "Press P or SPACE to resume", SCREEN_WIDTH // 2 - 140, SCREEN_HEIGHT // 2 + 10, FONT_MID, GRAY)
+        msg1 = FONT_LARGE.render("PAUSED", True, WHITE)
+        msg2 = FONT_MID.render("Press P or SPACE to resume", True, GRAY)
+        surface.blit(msg1, (SCREEN_WIDTH // 2 - msg1.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
+        surface.blit(msg2, (SCREEN_WIDTH // 2 - msg2.get_width() // 2, SCREEN_HEIGHT // 2 + 10))
 
     def _render_gameover(self, surface):
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
         surface.blit(overlay, (0, 0))
-        draw_text(surface, "GAME OVER", SCREEN_WIDTH // 2 - 120, 200, FONT_TITLE, RED)
-        draw_text(surface, f"Score: {self.score}", SCREEN_WIDTH // 2 - 80, 290, FONT_LARGE, WHITE)
-        if self.score >= self.high_score:
-            draw_text(surface, "NEW HIGH SCORE!", SCREEN_WIDTH // 2 - 100, 340, FONT_MID, YELLOW)
-        draw_text(surface, f"Best: {self.high_score}", SCREEN_WIDTH // 2 - 60, 380, FONT_MID, YELLOW)
-        draw_text(surface, "[ SPACE / ENTER ] Play Again", SCREEN_WIDTH // 2 - 160, 460, FONT_MID, CYAN)
-        draw_text(surface, "[ ESC ] Back to Menu", SCREEN_WIDTH // 2 - 110, 500, FONT_MID, GRAY)
 
-    # ── 主循环 ─────────────────────────────────────────────────────────────────
+        g1 = FONT_TITLE.render("GAME OVER", True, RED)
+        g2 = FONT_LARGE.render(f"Score: {self.score}", True, WHITE)
+        surface.blit(g1, (SCREEN_WIDTH // 2 - g1.get_width() // 2, 200))
+        surface.blit(g2, (SCREEN_WIDTH // 2 - g2.get_width() // 2, 290))
+
+        if self.score >= self.high_score and self.score > 0:
+            hs = FONT_MID.render("NEW HIGH SCORE!", True, YELLOW)
+            surface.blit(hs, (SCREEN_WIDTH // 2 - hs.get_width() // 2, 345))
+
+        best = FONT_MID.render(f"Best: {self.high_score}", True, YELLOW)
+        surface.blit(best, (SCREEN_WIDTH // 2 - best.get_width() // 2, 385))
+
+        r1 = FONT_MID.render("[ SPACE ] Play Again", True, CYAN)
+        r2 = FONT_SMALL.render("[ ESC ] Back to Menu", True, GRAY)
+        surface.blit(r1, (SCREEN_WIDTH // 2 - r1.get_width() // 2, 460))
+        surface.blit(r2, (SCREEN_WIDTH // 2 - r2.get_width() // 2, 500))
+
+    # ── Main Loop ─────────────────────────────────────────────────────────────
 
     def run(self):
         while True:
@@ -746,7 +725,6 @@ class Game:
             self.render(SCREEN)
             CLOCK.tick(FPS)
 
-# ─── 入口 ─────────────────────────────────────────────────────────────────────
+# ─── Entry Point ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    game = Game()
-    game.run()
+    Game().run()
